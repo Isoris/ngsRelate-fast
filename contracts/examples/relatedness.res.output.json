@@ -1,0 +1,45 @@
+{
+  "schema": "ngsrelate_fast.output.v1",
+  "run_id": "cohort_226_full_fast_v1",
+  "input_contract": "/scratch/lt200308-agbsci/.../relatedness.res.input.json",
+  "status": "ok",
+  "warnings": [],
+  "outputs": {
+    "res": {
+      "path": "/scratch/lt200308-agbsci/.../relatedness.res",
+      "size_bytes": 7831042,
+      "mtime": "2026-05-13T08:24:09+00:00",
+      "sha256": "11223344556677889900aabbccddeeff112233445566778899aabbccddeeff00"
+    },
+    "stderr_log": {
+      "path": "/scratch/lt200308-agbsci/.../relatedness.res.stderr.log",
+      "size_bytes": 18432,
+      "mtime": "2026-05-13T08:24:09+00:00"
+    },
+    "samples_sidecar": {
+      "path": "/scratch/lt200308-agbsci/.../samples.txt",
+      "size_bytes": 3842,
+      "mtime": "2026-02-04T09:18:42+00:00",
+      "sha256": "0011223344556677889900aabbccddeeff0011223344556677889900aabbccdd"
+    }
+  },
+  "downsampling": {
+    "enabled": true,
+    "target_sites_per_gb": 100000,
+    "total_input_sites": 951295,
+    "total_kept_sites": 100024,
+    "total_genome_bp": 1003000000,
+    "per_chromosome": [
+      {"chromosome": "C_gar_LG01", "length_bp": 52340000, "input_sites": 35421, "kept_sites": 5234, "stride": 6.77},
+      {"chromosome": "C_gar_LG02", "length_bp": 48190000, "input_sites": 32108, "kept_sites": 4819, "stride": 6.66},
+      {"chromosome": "C_gar_LG28", "length_bp":  9870000, "input_sites":  7912, "kept_sites":  987, "stride": 8.02}
+    ]
+  },
+  "stats": {
+    "elapsed_seconds": 507.31,
+    "n_pairs": 25425,
+    "n_pairs_expected": 25425,
+    "peak_memory_mb": 18742.5,
+    "completed_at": "2026-05-13T08:24:09+00:00"
+  }
+}

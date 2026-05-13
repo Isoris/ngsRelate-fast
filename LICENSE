@@ -1,0 +1,11 @@
+ngsRelate-fast is a derivative work of ANGSD/NgsRelate
+(https://github.com/ANGSD/NgsRelate) and is distributed under the same
+license terms as upstream (GNU General Public License v3.0).
+
+Upstream copyright and authorship are unchanged. This fork adds the
+patches in `patches/` and the supporting scripts in `scripts/`,
+`validate/`, and the top-level build pipeline. All other code in
+`build/NgsRelate-upstream/` and the patched copy in
+`build/NgsRelate-fast/` is the work of the upstream authors.
+
+See https://www.gnu.org/licenses/gpl-3.0.html for the full GPL-3.0 text.

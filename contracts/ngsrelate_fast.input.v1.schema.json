@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ngsrelate_fast.input.v1",
+  "title": "ngsRelate-fast input contract",
+  "description": "Written BEFORE the binary is invoked. Captures everything needed to reproduce the run: inputs (with hashes), effective parameters, environment, and the literal command line. If the binary aborts, this file still exists and tells you exactly what was attempted.",
+  "type": "object",
+  "required": ["schema", "run_id", "tool", "inputs", "params", "environment", "invocation"],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "ngsrelate_fast.input.v1",
+      "description": "Schema identifier. Bump version when fields change incompatibly."
+    },
+    "run_id": {
+      "type": "string",
+      "description": "User-supplied identifier for the run (e.g. 'cohort_226_full_fast_v1')."
+    },
+    "tool": {
+      "type": "object",
+      "required": ["name", "binary_path", "binary_sha256"],
+      "properties": {
+        "name": {"type": "string", "const": "ngsRelate-fast"},
+        "version": {"type": "string", "description": "Fork version (e.g. 'v1.0')."},
+        "upstream_commit": {"type": "string", "description": "Upstream ANGSD/NgsRelate SHA the fork was built from."},
+        "patch_sha256": {"type": "string", "description": "SHA-256 of patches/01_ngsRelate_fast.patch — pins the exact patch applied."},
+        "binary_path": {"type": "string"},
+        "binary_sha256": {"type": "string"}
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "required": ["beagle", "freqs"],
+      "properties": {
+        "beagle":  {"$ref": "#/$defs/file_ref"},
+        "freqs":   {"$ref": "#/$defs/file_ref"},
+        "samples": {"$ref": "#/$defs/file_ref"}
+      }
+    },
+    "params": {
+      "type": "object",
+      "description": "Effective parameter set — ALL flags including defaults that weren't passed on the command line. Reproducibility means anyone running with this exact param set gets the same output.",
+      "required": ["D_sites_per_gb", "n_samples", "threads"],
+      "properties": {
+        "D_sites_per_gb": {"type": "integer", "description": "0 = downsampling disabled (canonical upstream behavior)."},
+        "n_samples": {"type": "integer"},
+        "threads": {"type": "integer"},
+        "call_genotypes": {"type": "integer"},
+        "estimate_inbreeding": {"type": "integer"},
+        "three_coef_mode": {"type": "integer"},
+        "verbose": {"type": "integer"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": ["hostname", "submitted_at"],
+      "properties": {
+        "hostname": {"type": "string"},
+        "submitted_at": {"type": "string", "format": "date-time"},
+        "user": {"type": "string"},
+        "slurm_job_id": {"type": "string"},
+        "slurm_array_task_id": {"type": "string"},
+        "conda_env": {"type": "string"},
+        "working_dir": {"type": "string"}
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "required": ["argv"],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Literal argv as passed to the binary. Copy-paste-able to reproduce."
+        },
+        "stdout_path": {"type": "string"},
+        "stderr_path": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": {"type": "string", "description": "Absolute path at submission time."},
+        "size_bytes": {"type": "integer"},
+        "mtime": {"type": "string", "format": "date-time"},
+        "sha256": {"type": "string", "description": "Content hash. Lets you detect input drift between runs that claim to use 'the same' file."}
+      }
+    }
+  }
+}

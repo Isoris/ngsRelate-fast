@@ -1,0 +1,64 @@
+{
+  "schema": "ngsrelate_fast.input.v1",
+  "run_id": "cohort_226_full_fast_v1",
+  "tool": {
+    "name": "ngsRelate-fast",
+    "version": "v1.0",
+    "upstream_commit": "a1b2c3d4e5f6",
+    "patch_sha256": "9f8e7d6c5b4a3928171615141312111009080706050403020100ffffeeeeddddccc",
+    "binary_path": "/scratch/lt200308-agbsci/Quentin_project_KEEP_2026-02-04/tools/ngsRelate-fast/bin/ngsRelate-fast",
+    "binary_sha256": "abc123def456789012345678901234567890123456789012345678901234567890"
+  },
+  "inputs": {
+    "beagle": {
+      "path": "/scratch/lt200308-agbsci/.../catfish.wholegenome.byRF.thin_500.beagle.gz",
+      "size_bytes": 8472916384,
+      "mtime": "2026-04-12T14:32:01+00:00",
+      "sha256": "1a2b3c4d5e6f7890abcdef1234567890abcdef1234567890abcdef1234567890"
+    },
+    "freqs": {
+      "path": "/scratch/lt200308-agbsci/.../freqs.aligned_to_beagle.txt",
+      "size_bytes": 24817392,
+      "mtime": "2026-04-12T14:33:18+00:00",
+      "sha256": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    },
+    "samples": {
+      "path": "/scratch/lt200308-agbsci/.../list_of_samples_one_per_line_same_bamfile_list.tsv",
+      "size_bytes": 3842,
+      "mtime": "2026-02-04T09:18:42+00:00",
+      "sha256": "0011223344556677889900aabbccddeeff0011223344556677889900aabbccdd"
+    }
+  },
+  "params": {
+    "D_sites_per_gb": 100000,
+    "n_samples": 226,
+    "threads": 32,
+    "call_genotypes": 0,
+    "estimate_inbreeding": 0,
+    "three_coef_mode": 0,
+    "verbose": 0
+  },
+  "environment": {
+    "hostname": "lanta-c0419",
+    "submitted_at": "2026-05-13T08:15:42+00:00",
+    "user": "lt200308",
+    "slurm_job_id": "8472193",
+    "slurm_array_task_id": null,
+    "conda_env": "assembly",
+    "working_dir": "/scratch/lt200308-agbsci/Quentin_project_KEEP_2026-02-04"
+  },
+  "invocation": {
+    "argv": [
+      "/scratch/lt200308-agbsci/.../bin/ngsRelate-fast",
+      "-G", "/scratch/lt200308-agbsci/.../catfish.wholegenome.byRF.thin_500.beagle.gz",
+      "-f", "/scratch/lt200308-agbsci/.../freqs.aligned_to_beagle.txt",
+      "-n", "226",
+      "-p", "32",
+      "-D", "100000",
+      "-O", "/scratch/lt200308-agbsci/.../relatedness.res",
+      "-z", "/scratch/lt200308-agbsci/.../samples.txt"
+    ],
+    "stdout_path": null,
+    "stderr_path": "/scratch/lt200308-agbsci/.../relatedness.res.stderr.log"
+  }
+}

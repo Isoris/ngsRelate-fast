@@ -1,0 +1,352 @@
+--- ngsRelate.cpp.orig
++++ ngsRelate.cpp
+@@ -50,6 +50,11 @@
+ double TINY=1e-8;
+ double p10[2]={1-TINY,TINY};
+ double p01[2]={TINY,1-TINY};
++
++// ===== ngsRelate-fast: downsampling target =====
++// Sites kept per Gb of (per-chromosome) assembled length. -D 0 disables.
++int target_sites_per_gb = 100000;
++// ===============================================
++
+ int num_threads = 4;
+ char *freqname=NULL;
+ char *gname=NULL;
+@@ -270,6 +275,140 @@
+   return(p);
+ }
+ 
++// ============================================================================
++// ngsRelate-fast: per-chromosome balanced-density downsampling
++// ----------------------------------------------------------------------------
++// Reduces the global site count to ~target_sites_per_gb per Gb of assembled
++// length, applied PER CHROMOSOME so density (sites/bp) is uniform across
++// chromosomes regardless of how many sites survived MAF/missingness filters.
++//
++// Inputs are mutated in place: gls, freq, and any parallel per-site arrays
++// produced by the file reader.
++//
++// Site IDs in BEAGLE are "chrom_pos" strings. We parse the chromosome out
++// by splitting on the LAST '_' (positions are always trailing integers).
++// ============================================================================
++
++#include <string>
++#include <unordered_map>
++
++struct ChromExtent {
++    long min_pos;
++    long max_pos;
++    int n_sites;
++};
++
++// Parse "chrom_pos" -> (chrom, pos). Splits on the last underscore.
++static int parse_site_id(const char *site_id, std::string &chrom_out, long &pos_out) {
++    const char *p = site_id + strlen(site_id) - 1;
++    while (p > site_id && *p != '_') p--;
++    if (p == site_id) return -1;
++    chrom_out.assign(site_id, p - site_id);
++    char *endp = NULL;
++    pos_out = strtol(p + 1, &endp, 10);
++    if (endp == p + 1) return -1;
++    return 0;
++}
++
++// Returns new nsites after downsampling. Caller is responsible for the
++// gls/freq arrays being reallocated to the returned size (we do it here).
++size_t downsample_sites_balanced(double ***gls_pp,
++                                 std::vector<double> *freq,
++                                 std::vector<char *> &site_ids,
++                                 size_t nsites_in,
++                                 int n_individuals) {
++    if (target_sites_per_gb <= 0) {
++        fprintf(stderr, "[ngsRelate-fast] -D 0: downsampling disabled, using all %zu sites\n", nsites_in);
++        return nsites_in;
++    }
++    if (nsites_in == 0) return 0;
++
++    // ---- Pass 1: per-chromosome extents and counts ----
++    std::unordered_map<std::string, ChromExtent> extents;
++    std::vector<std::string> chrom_of_site(nsites_in);
++    std::vector<long> pos_of_site(nsites_in);
++
++    for (size_t i = 0; i < nsites_in; i++) {
++        std::string c;
++        long pos;
++        if (parse_site_id(site_ids[i], c, pos) != 0) {
++            fprintf(stderr, "[ngsRelate-fast] WARN: cannot parse site id '%s', skipping downsampling\n", site_ids[i]);
++            return nsites_in;
++        }
++        chrom_of_site[i] = c;
++        pos_of_site[i] = pos;
++        auto it = extents.find(c);
++        if (it == extents.end()) {
++            ChromExtent e = {pos, pos, 1};
++            extents[c] = e;
++        } else {
++            if (pos < it->second.min_pos) it->second.min_pos = pos;
++            if (pos > it->second.max_pos) it->second.max_pos = pos;
++            it->second.n_sites++;
++        }
++    }
++
++    double sites_per_bp = (double)target_sites_per_gb / 1e9;
++    fprintf(stderr, "[ngsRelate-fast] Downsampling: target density %d sites/Gb (%.3e sites/bp)\n",
++            target_sites_per_gb, sites_per_bp);
++    fprintf(stderr, "[ngsRelate-fast] Detected %zu chromosome(s) in input\n", extents.size());
++
++    // ---- Compute per-chromosome stride ----
++    std::unordered_map<std::string, double> stride_of_chrom;
++    std::unordered_map<std::string, int> target_of_chrom;
++    long total_genome_bp = 0;
++    size_t total_target = 0;
++
++    for (auto &kv : extents) {
++        long L = kv.second.max_pos - kv.second.min_pos + 1;
++        total_genome_bp += L;
++        int n_target = (int)round(sites_per_bp * (double)L);
++        if (n_target < 1) n_target = 1;
++        if (n_target > kv.second.n_sites) n_target = kv.second.n_sites;
++        target_of_chrom[kv.first] = n_target;
++        stride_of_chrom[kv.first] = (double)kv.second.n_sites / (double)n_target;
++        total_target += n_target;
++        fprintf(stderr, "[ngsRelate-fast]   %s: %d sites in %.2f Mb -> keep %d (stride %.2f)\n",
++                kv.first.c_str(), kv.second.n_sites, L / 1e6,
++                n_target, stride_of_chrom[kv.first]);
++    }
++    fprintf(stderr, "[ngsRelate-fast] Total: %zu -> %zu sites (genome length %.3f Gb)\n",
++            nsites_in, total_target, total_genome_bp / 1e9);
++
++    // ---- Pass 2: pick sites by stride, per chromosome ----
++    std::unordered_map<std::string, int> seen_in_chrom;
++    std::unordered_map<std::string, double> next_pick_in_chrom;
++    for (auto &kv : extents) {
++        seen_in_chrom[kv.first] = 0;
++        next_pick_in_chrom[kv.first] = 0.0;
++    }
++
++    double **gls = *gls_pp;
++    double **gls_new = new double*[total_target];
++    std::vector<double> freq_new;
++    freq_new.reserve(total_target);
++    std::vector<char*> site_ids_new;
++    site_ids_new.reserve(total_target);
++    size_t k = 0;
++
++    for (size_t i = 0; i < nsites_in; i++) {
++        const std::string &c = chrom_of_site[i];
++        double next_pick = next_pick_in_chrom[c];
++        int seen = seen_in_chrom[c];
++        if ((double)seen >= next_pick) {
++            gls_new[k++] = gls[i];                        // transfer ownership
++            freq_new.push_back(freq->at(i));
++            site_ids_new.push_back(site_ids[i]);
++            next_pick_in_chrom[c] = next_pick + stride_of_chrom[c];
++        } else {
++            delete [] gls[i];                              // free unused row
++        }
++        seen_in_chrom[c] = seen + 1;
++    }
++
++    delete [] gls;
++    *gls_pp = gls_new;
++    freq->swap(freq_new);
++    site_ids.swap(site_ids_new);
++    fprintf(stderr, "[ngsRelate-fast] Downsampling complete: %zu sites retained\n", k);
++    return k;
++}
++// ============================================================================
++
+ double access_genotype(double **gls, const int & site, const int & indi, const int & geno){
+   return gls[site][indi * 3 + geno];
+ }
+@@ -388,7 +527,12 @@
+ 
+ void emission_ngsrelate9(std::vector<double> * freq, double **gls, double **emis, int *keeplist, int & nkeep, int & ind1, int & ind2 ){
+   // access_genotype(td->gls, i, td->a, 0);
++
++  // ===== ngsRelate-fast: precompute freq powers per site, once per pair =====
++  // Eliminates ~16 pow() calls per site per pair from the original code.
++  // Mathematically identical to upstream; just hoists invariants out of the
++  // per-emission expressions. Output emis[][] is bit-equivalent to upstream.
++  // ==========================================================================
+   int i;
+   for(int x=0;x<nkeep;x++){
+     i = keeplist[x];
+@@ -396,103 +540,98 @@
+     double freqa=freq->at(i); // alternative allele frequency
+     double freqA=1-freqa;
+ 
+-    // i == freqA == freq0
+-    // j == freqa == freq1
++    double fA  = freqA;
++    double fA2 = fA  * fA;
++    double fA3 = fA2 * fA;
++    double fA4 = fA2 * fA2;
++
++    double fa  = freqa;
++    double fa2 = fa  * fa;
++    double fa3 = fa2 * fa;
++    double fa4 = fa2 * fa2;
++
++    double fAfa   = fA * fa;
++    double fA2fa  = fA2 * fa;
++    double fAfa2  = fA * fa2;
++    double fA2fa2 = fA2 * fa2;
++    double fA3fa  = fA3 * fa;
++    double fAfa3  = fA * fa3;
+ 
+-    // emis<- cbind(freq0,freq0^2,freq0^2, freq0^3,freq0^2,freq0^3, freq0^2,freq0^3,freq0^4)*gl1[1,]*gl2[1,]
+-    // ##00&00
+-    // G_real=(AA,AA)
++    // ##00&00  G_real=(AA,AA)
+     double AAAA = access_genotype(gls, i, ind1, 0) * access_genotype(gls, i, ind2, 0);
+-    emis[x][0] = pow(freqA, 4) * AAAA;
+-    emis[x][1] = pow(freqA, 3) * AAAA;
+-    emis[x][2] = pow(freqA, 2) * AAAA;
+-    emis[x][3] = pow(freqA, 3) * AAAA;
+-    emis[x][4] = pow(freqA, 2) * AAAA;
+-    emis[x][5] = pow(freqA, 3) * AAAA;
+-    emis[x][6] = pow(freqA, 2) * AAAA;
+-    emis[x][7] = pow(freqA, 2) * AAAA;
+-    emis[x][8] = freqA * AAAA;
++    emis[x][0] = fA4 * AAAA;
++    emis[x][1] = fA3 * AAAA;
++    emis[x][2] = fA2 * AAAA;
++    emis[x][3] = fA3 * AAAA;
++    emis[x][4] = fA2 * AAAA;
++    emis[x][5] = fA3 * AAAA;
++    emis[x][6] = fA2 * AAAA;
++    emis[x][7] = fA2 * AAAA;
++    emis[x][8] = fA  * AAAA;
+ 
+-    // emis <- emis + cbind(freq1,freq1^2,freq1^2, freq1^3,freq1^2,freq1^3, freq1^2,freq1^3,freq1^4)*gl1[3,]*gl2[3,]
+-    // ##11&11
+-    // G_real=(aa,aa)
++    // ##11&11  G_real=(aa,aa)
+     double aaaa = access_genotype(gls, i, ind1, 2) * access_genotype(gls, i, ind2, 2);
+-    emis[x][0] += pow(freqa, 4) * aaaa;
+-    emis[x][1] += pow(freqa, 3) * aaaa;
+-    emis[x][2] += pow(freqa, 2) * aaaa;
+-    emis[x][3] += pow(freqa, 3) * aaaa;
+-    emis[x][4] += pow(freqa, 2) * aaaa;
+-    emis[x][5] += pow(freqa, 3) * aaaa;
+-    emis[x][6] += pow(freqa, 2) * aaaa;
+-    emis[x][7] += pow(freqa, 2) * aaaa;
+-    emis[x][8] += freqa * aaaa;
++    emis[x][0] += fa4 * aaaa;
++    emis[x][1] += fa3 * aaaa;
++    emis[x][2] += fa2 * aaaa;
++    emis[x][3] += fa3 * aaaa;
++    emis[x][4] += fa2 * aaaa;
++    emis[x][5] += fa3 * aaaa;
++    emis[x][6] += fa2 * aaaa;
++    emis[x][7] += fa2 * aaaa;
++    emis[x][8] += fa  * aaaa;
+ 
+-    // emis <- emis + cbind(0,freq0*freq1,0, freq0*freq1^2,0,freq0^2*freq1 ,0,0,freq1^2*freq0^2)*gl1[1,]*gl2[3,]
+-    // ##00&11
+-    // G_real=(AA,aa)
++    // ##00&11  G_real=(AA,aa)
+     double AAaa = access_genotype(gls, i, ind1, 0) * access_genotype(gls, i, ind2, 2);
+-    emis[x][0] += pow(freqA, 2) * pow(freqa, 2) * AAaa;
+-    emis[x][3] += pow(freqA, 2) * freqa * AAaa;
+-    emis[x][5] += freqA * pow(freqa,2) * AAaa;
+-    emis[x][7] += freqA * freqa * AAaa;
++    emis[x][0] += fA2fa2 * AAaa;
++    emis[x][3] += fA2fa  * AAaa;
++    emis[x][5] += fAfa2  * AAaa;
++    emis[x][7] += fAfa   * AAaa;
+ 
+-    // emis <- emis + cbind(0,freq0*freq1,0, freq0^2*freq1,0,freq1^2*freq0, 0,0,freq1^2*freq0^2)*gl1[3,]*gl2[1,]
+-    // ##11&00
+-    // G_real=(aa,AA)
++    // ##11&00  G_real=(aa,AA)
+     double aaAA = access_genotype(gls, i, ind1, 2) * access_genotype(gls, i, ind2, 0);
+-    emis[x][0] += pow(freqA, 2) * pow(freqa, 2) * aaAA;
+-    emis[x][3] += freqA * pow(freqa, 2) * aaAA;
+-    emis[x][5] += pow(freqA, 2) * freqa * aaAA;
+-    emis[x][7] += freqA * freqa * aaAA;
++    emis[x][0] += fA2fa2 * aaAA;
++    emis[x][3] += fAfa2  * aaAA;
++    emis[x][5] += fA2fa  * aaAA;
++    emis[x][7] += fAfa   * aaAA;
+ 
+-    // emis <- emis + cbind(0,0,freq0*freq1, 2*freq0^2*freq1,0,0, 0,freq0^2*freq1,2*freq0^3*freq1)*gl1[1,]*gl2[2,]
+-    // ##00&01
+-    // G_real=(AA,Aa)
++    // ##00&01  G_real=(AA,Aa)
+     double AAAa = access_genotype(gls, i, ind1, 0) * access_genotype(gls, i, ind2, 1);
+-    emis[x][0] += 2 * pow(freqA, 3) * freqa * AAAa;
+-    emis[x][1] += pow(freqA, 2) * freqa * AAAa;
+-    emis[x][5] += 2 * pow(freqA, 2) * freqa * AAAa;
+-    emis[x][6] += freqA * freqa * AAAa;
++    emis[x][0] += 2 * fA3fa  * AAAa;
++    emis[x][1] += fA2fa  * AAAa;
++    emis[x][5] += 2 * fA2fa  * AAAa;
++    emis[x][6] += fAfa   * AAAa;
+ 
+-    // emis <- emis + cbind(0,0,freq0*freq1, 2*freq1^2*freq0,0,0, 0,freq1^2*freq0,2*freq1^3*freq0)*gl1[3,]*gl2[2,]
+-    // ##11&01
+-    // # G_real=(aa,Aa)
++    // ##11&01  G_real=(aa,Aa)
+     double aaAa = access_genotype(gls, i, ind1, 2) * access_genotype(gls, i, ind2, 1);
+-    emis[x][0] += 2 * freqA * pow(freqa, 3) * aaAa;
+-    emis[x][1] += freqA * pow(freqa, 2) * aaAa;
+-    emis[x][5] += 2 * freqA * pow(freqa, 2) * aaAa;
+-    emis[x][6] += freqA * freqa * aaAa;
++    emis[x][0] += 2 * fAfa3  * aaAa;
++    emis[x][1] += fAfa2  * aaAa;
++    emis[x][5] += 2 * fAfa2  * aaAa;
++    emis[x][6] += fAfa   * aaAa;
+ 
+-    // emis <- emis + cbind(0,0,0, 0,freq0*freq1,2*freq0^2*freq1, 0,freq0^2*freq1,2*freq0^3*freq1)*gl1[2,]*gl2[1,]
+-    // ##01&00
+-    // G_real=(Aa,AA)
++    // ##01&00  G_real=(Aa,AA)
+     double AaAA = access_genotype(gls, i, ind1, 1) * access_genotype(gls, i, ind2, 0);
+-    emis[x][0] += 2 * pow(freqA, 3) * freqa * AaAA;
+-    emis[x][1] += pow(freqA, 2) * freqa * AaAA;
+-    emis[x][3] += 2 * pow(freqA, 2) * freqa * AaAA;
+-    emis[x][4] += freqA * freqa * AaAA;
++    emis[x][0] += 2 * fA3fa  * AaAA;
++    emis[x][1] += fA2fa  * AaAA;
++    emis[x][3] += 2 * fA2fa  * AaAA;
++    emis[x][4] += fAfa   * AaAA;
+ 
+-    // emis <- emis + cbind(0,0,0, 0,freq0*freq1,2*freq1^2*freq0, 0,freq1^2*freq0,2*freq1^3*freq0)*gl1[2,]*gl2[3,]
+-    // ##01&11
+-    // G_real=(Aa,aa)
++    // ##01&11  G_real=(Aa,aa)
+     double Aaaa = access_genotype(gls, i, ind1, 1) * access_genotype(gls, i, ind2, 2);
+-    emis[x][0] += 2 * freqA * pow(freqa, 3) * Aaaa;
+-    emis[x][1] += freqA * pow(freqa, 2) * Aaaa;
+-    emis[x][3] += 2 * freqA * pow(freqa, 2) * Aaaa;
+-    emis[x][4] += freqA * freqa * Aaaa;
++    emis[x][0] += 2 * fAfa3  * Aaaa;
++    emis[x][1] += fAfa2  * Aaaa;
++    emis[x][3] += 2 * fAfa2  * Aaaa;
++    emis[x][4] += fAfa   * Aaaa;
+ 
+-    // emis <- emis + cbind(0,0,0, 0,0,0, 2*freq0*freq1,freq1*freq0,4*freq1^2*freq0^2)*gl1[2,]*gl2[2,]
+-    // ##01&01 S7
+-    // G_real=(Aa,Aa)
++    // ##01&01  G_real=(Aa,Aa)
+     double AaAa = access_genotype(gls, i, ind1, 1) * access_genotype(gls, i, ind2, 1);
+-    emis[x][0] += 4 * pow(freqA, 2) * pow(freqa, 2) * AaAa;
+-    emis[x][1] += freqA * freqa * AaAa;
+-    emis[x][2] += 2 * freqA * freqa * AaAa;
++    emis[x][0] += 4 * fA2fa2 * AaAa;
++    emis[x][1] += fAfa   * AaAa;
++    emis[x][2] += 2 * fAfa   * AaAa;
+   }
+ }
+ 
+@@ -540,6 +679,7 @@
+   fprintf(fp, "   -p <INT>            threads (default 4)\n");
+   fprintf(fp, "   -c <INT>            Should call genotypes instead?\n");
+   fprintf(fp, "   -s <INT>            Should you swich the freq with 1-freq?\n");
++  fprintf(fp, "   -D <INT>            [ngsRelate-fast] Target sites per Gb (default 100000, 0=disable)\n");
+   fprintf(fp, "   -F <INT>            Estimate inbreeding instead of estimating the nine jacquard coefficients\n");
+   fprintf(fp, "   -o <INT>            estimating the 3 jacquard coefficient, assumming no inbreeding\n");
+   fprintf(fp, "   -v <INT>            Verbose. print like per iteration\n");

@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ngsrelate_fast.output.v1",
+  "title": "ngsRelate-fast output contract",
+  "description": "Written AFTER successful completion of the binary. Presence of this file = run succeeded. Downstream tools (ngsPedigree etc.) should check for this file before consuming the .res output. Captures what was produced, downsampling summary, and run statistics.",
+  "type": "object",
+  "required": ["schema", "run_id", "status", "outputs", "downsampling", "stats"],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "ngsrelate_fast.output.v1"
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Matches run_id in the corresponding .input.json."
+    },
+    "input_contract": {
+      "type": "string",
+      "description": "Path to the matching .input.json file. Lets a consumer round-trip back to the inputs."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "warn"],
+      "description": "'ok' if all post-flight checks passed, 'warn' if there were soft issues (e.g. row count mismatch). A failed run does not write this file at all."
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Human-readable warnings. Empty array if status='ok'."
+    },
+    "outputs": {
+      "type": "object",
+      "required": ["res"],
+      "properties": {
+        "res":         {"$ref": "#/$defs/file_ref"},
+        "stderr_log":  {"$ref": "#/$defs/file_ref"},
+        "samples_sidecar": {"$ref": "#/$defs/file_ref"}
+      }
+    },
+    "downsampling": {
+      "type": "object",
+      "description": "Per-chromosome breakdown parsed from binary stderr. Empty object if -D 0 was set.",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "target_sites_per_gb": {"type": "integer"},
+        "total_input_sites":  {"type": "integer"},
+        "total_kept_sites":   {"type": "integer"},
+        "total_genome_bp":    {"type": "integer"},
+        "per_chromosome": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["chromosome", "length_bp", "input_sites", "kept_sites", "stride"],
+            "properties": {
+              "chromosome":  {"type": "string"},
+              "length_bp":   {"type": "integer"},
+              "input_sites": {"type": "integer"},
+              "kept_sites":  {"type": "integer"},
+              "stride":      {"type": "number"}
+            }
+          }
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "required": ["elapsed_seconds", "n_pairs", "n_pairs_expected"],
+      "properties": {
+        "elapsed_seconds":   {"type": "number"},
+        "n_pairs":           {"type": "integer", "description": "Rows in the .res output (excluding header)."},
+        "n_pairs_expected":  {"type": "integer", "description": "n_samples * (n_samples - 1) / 2."},
+        "peak_memory_mb":    {"type": "number", "description": "From /usr/bin/time -v if available, else null."},
+        "completed_at":      {"type": "string", "format": "date-time"}
+      }
+    }
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path":       {"type": "string"},
+        "size_bytes": {"type": "integer"},
+        "sha256":     {"type": "string"}
+      }
+    }
+  }
+}
