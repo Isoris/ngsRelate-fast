@@ -20,6 +20,7 @@ jobs:
   pytest:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
@@ -30,4 +31,8 @@ jobs:
       - name: Install test deps
         run: pip install pytest jsonschema
       - name: Run adaptive tests
-        run: pytest adaptive/tests/ -v
+        # Use `python -m pytest` so the repo root is on sys.path even on
+        # runners where bare `pytest` skips that step. The empty
+        # `adaptive/__init__.py` also makes this robust to bare-pytest
+        # invocation, but -m is the safer default.
+        run: python -m pytest adaptive/tests/ -v
