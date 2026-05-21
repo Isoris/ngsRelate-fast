@@ -20,6 +20,7 @@ jobs:
   pytest:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
@@ -27,7 +28,30 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Diagnostics — environment
+        run: |
+          echo "=== python ==="
+          python --version
+          which python
+          echo "=== cwd ==="
+          pwd
+          ls -la
+          echo "=== adaptive layout ==="
+          find adaptive -maxdepth 3 -type f | sort
+          echo "=== contracts ==="
+          ls -la contracts/
+          echo "=== /tmp mount flags ==="
+          mount | grep -E '/tmp|/home' || true
+
       - name: Install test deps
         run: pip install pytest jsonschema
+
+      - name: Diagnostics — pytest collection
+        run: |
+          python -c "import sys; print('sys.path:'); [print('  '+p) for p in sys.path]"
+          python -c "import adaptive.scheduler; print('adaptive.scheduler at', adaptive.scheduler.__file__)"
+          pytest --collect-only adaptive/tests/ 2>&1 | tail -20
+
       - name: Run adaptive tests
-        run: pytest adaptive/tests/ -v
+        run: pytest adaptive/tests/ -v --tb=long -x
