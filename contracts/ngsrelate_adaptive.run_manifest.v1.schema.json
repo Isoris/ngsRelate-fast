@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ngsrelate_adaptive.run_manifest.v1",
+  "title": "ngsRelate adaptive scheduler — per-chromosome run manifest",
+  "description": "Written by adaptive.scheduler after every per-chromosome adaptive run. Sits alongside the .res file (extends the existing ngsrelate_fast.output.v1 pattern). Records per-pair budgeting summary, prior anchor, escalation stats, and the locked config. NOT consumed by ngsPedigree — the .res alone is the consumer-facing artifact. This manifest is for the methods paragraph + downstream re-runs + calibration auditing.",
+  "type": "object",
+  "required": ["schema", "chromosome", "n_samples", "n_pairs_expected",
+               "n_pairs_completed", "chrom_total_sites", "binary_path",
+               "config", "elapsed_seconds", "completed_at", "anchor"],
+  "properties": {
+    "schema":            {"type": "string", "const": "ngsrelate_adaptive.run_manifest.v1"},
+    "chromosome":        {"type": "string", "description": "Chromosome label, matches BEAGLE site IDs."},
+    "n_samples":         {"type": "integer"},
+    "n_pairs_expected":  {"type": "integer", "description": "n_samples * (n_samples - 1) / 2."},
+    "n_pairs_completed": {"type": "integer"},
+    "n_pairs_escalated": {"type": "integer", "description": "Pairs re-run at a larger budget per SPEC §4.3."},
+    "n_pairs_failed":    {"type": "integer", "description": "Pairs the binary failed on, even in the initial pass."},
+    "chrom_total_sites": {"type": "integer", "description": "Sites available on this chromosome (BEAGLE body row count)."},
+    "binary_path":       {"type": "string"},
+    "budgets_built":     {"type": "array", "items": {"type": "integer"}, "description": "Distinct subset BEAGLE budgets materialized in the cache for this chromosome."},
+
+    "anchor": {
+      "type": "object",
+      "description": "Genome-wide .res used as the per-pair prior source (CLARIFICATION_NOTE §3).",
+      "required": ["genome_wide_res_path", "genome_wide_res_sha256"],
+      "properties": {
+        "genome_wide_res_path":              {"type": "string"},
+        "genome_wide_res_sha256":            {"type": ["string", "null"]},
+        "genome_wide_input_contract_sha256": {"type": ["string", "null"], "description": "Hash of the genome-wide run's .input.json, if it was produced by ngsrelate_fast_run.py."},
+        "sample_set_match":                  {"type": "boolean", "description": "True iff the per-chrom BEAGLE's sample list equals the anchor's sample list (set equality)."},
+        "allow_mismatched_anchor":           {"type": "boolean", "description": "True if the run was launched with --allow-mismatched-anchor (escape hatch only)."}
+      }
+    },
+
+    "config": {
+      "type": "object",
+      "description": "Snapshot of the scheduler config used for this run. Reproducibility depends on this matching across re-runs.",
+      "required": ["budgets", "escalation"],
+      "properties": {
+        "budgets": {
+          "type": "object",
+          "required": ["low", "med", "high", "ambiguous", "duplicate"],
+          "properties": {
+            "low":                          {"type": "integer"},
+            "med":                          {"type": "integer"},
+            "high":                         {"type": "integer"},
+            "ambiguous":                    {"type": "integer"},
+            "duplicate":                    {"type": "integer"},
+            "floor_fraction_of_available":  {"type": "number"}
+          }
+        },
+        "escalation": {
+          "type": "object",
+          "required": ["factor", "boundary_epsilon_theta"],
+          "properties": {
+            "factor":                  {"type": "integer"},
+            "softer_rule":             {"type": "boolean"},
+            "softer_multiplier":       {"type": "integer"},
+            "softer_floor_addition":   {"type": "integer"},
+            "boundary_epsilon_theta":  {"type": "number"}
+          }
+        },
+        "inversion_boost": {
+          "type": "object",
+          "properties": {
+            "enabled":         {"type": "boolean"},
+            "boosted_chroms":  {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "ambiguous_first_degree_ibs0_band": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+        "n_workers":                        {"type": ["integer", "null"]},
+        "threads_per_pair":                 {"type": "integer"},
+        "allow_mismatched_anchor":          {"type": "boolean"}
+      }
+    },
+
+    "outputs": {
+      "type": "object",
+      "properties": {
+        "res":                {"$ref": "#/$defs/file_ref"},
+        "adaptive_manifest":  {"$ref": "#/$defs/file_ref"}
+      }
+    },
+
+    "stats": {
+      "type": "object",
+      "properties": {
+        "elapsed_seconds":     {"type": "number"},
+        "mean_sites_per_pair": {"type": ["number", "null"], "description": "Average sites used across all pairs (initial + escalation)."},
+        "median_sites_per_pair": {"type": ["number", "null"]}
+      }
+    },
+
+    "elapsed_seconds": {"type": "number"},
+    "completed_at":    {"type": "string", "format": "date-time"},
+
+    "failed_pairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pair":  {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
+          "error": {"type": "string"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path":       {"type": "string"},
+        "size_bytes": {"type": "integer"},
+        "sha256":     {"type": "string"}
+      }
+    }
+  }
+}

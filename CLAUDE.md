@@ -88,6 +88,21 @@ sbatch scripts/STEP_A07_fast_relatedness.sh
 python3 scripts/contract_io.py /path/to/relatedness.res
 ```
 
+### Adaptive scheduling (per-pair, per-chromosome)
+```bash
+python3 -m adaptive.scheduler --binary bin/ngsRelate-fast \
+    --beagle ... --freqs ... --samples ... \
+    --genome-wide-res ... --chrom C_gar_LG12 \
+    --out-dir out/LG12/ --n-samples 226 --workers 8
+make adaptive-test    # pytest adaptive/tests/
+```
+
+See `adaptive/docs/IMPLEMENTATION_PLAN.md` for the build plan,
+`adaptive/docs/SPEC_v0.1_CLARIFICATION_NOTE.md` for why the genome-wide
+`.res` is the prior source, and `adaptive/docs/DOWNSTREAM_CONSUMERS.md`
+for the blast radius if you're tempted to relax the `.res` format
+constraint.
+
 ## Status (current)
 
 - Patch written, not yet compiled on LANTA

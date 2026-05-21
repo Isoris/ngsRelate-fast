@@ -6,6 +6,41 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **feat(adaptive): per-pair adaptive site budgeting for per-chromosome
+  runs.** New `adaptive/` Python package that wraps `ngsRelate-fast` to
+  budget sites per pair based on the pair's KING-class prior (derived
+  from the genome-wide `.res`). Most pairs (unrelated, third-degree)
+  use a small budget and run fast; first-degree and ambiguous pairs use
+  a larger budget; borderline / interesting-disagreement pairs are
+  re-run at an escalated budget. Output is a Stage-2-compatible per-
+  chromosome `.res` plus an audit `.adaptive_manifest.tsv` and a
+  `.adaptive_run_manifest.json` (new schema:
+  `ngsrelate_adaptive.run_manifest.v1`).
+- `contracts/ngsrelate_adaptive.run_manifest.v1.schema.json` — schema
+  for the new run manifest; sits alongside the existing input/output
+  contracts.
+- `adaptive/docs/SPEC_v0.1_CLARIFICATION_NOTE.md`,
+  `adaptive/docs/IMPLEMENTATION_PLAN.md`,
+  `adaptive/docs/DOWNSTREAM_CONSUMERS.md`,
+  `adaptive/docs/CALIBRATION_LOG.md` (stub),
+  `adaptive/docs/METHODS_DRAFT.md` (draft).
+- `make adaptive-test` Makefile target.
+
+### Not changed
+
+- `patches/01_ngsRelate_fast.patch` — untouched.
+- `contracts/ngsrelate_fast.input.v1.schema.json`,
+  `contracts/ngsrelate_fast.output.v1.schema.json` — untouched.
+- `scripts/contract_io.py`, `scripts/ngsrelate_fast_run.py`,
+  `scripts/STEP_A07*.sh` — untouched. The adaptive scheduler is a
+  new, additive entry point.
+- The `.res` 23-column schema — preserved byte-for-byte (the adaptive
+  writer copies binary output verbatim).
+
+
+
 ## [1.0.0] - 2026-05-13
 
 Initial release. Pre-validation; do not use in production until

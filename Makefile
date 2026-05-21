@@ -1,4 +1,4 @@
-.PHONY: help build validate clean distclean test inspect
+.PHONY: help build validate clean distclean test inspect adaptive-test
 
 help:
 	@echo "ngsRelate-fast — make targets"
@@ -10,6 +10,7 @@ help:
 	@echo "  make inspect    Quick contract dump for a finished run"
 	@echo "                  Example:"
 	@echo "                    make inspect RES=/path/to/relatedness.res"
+	@echo "  make adaptive-test  Run the adaptive scheduler pytest suite"
 	@echo "  make clean      Remove build artifacts (keep bin/)"
 	@echo "  make distclean  Remove everything regenerable (bin/ + build/)"
 
@@ -35,3 +36,6 @@ clean:
 
 distclean:
 	rm -rf build/ bin/ validate/output/
+
+adaptive-test:
+	python3 -m pytest adaptive/tests/ -q

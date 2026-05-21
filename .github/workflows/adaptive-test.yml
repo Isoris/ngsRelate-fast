@@ -1,0 +1,33 @@
+name: adaptive-test
+
+# Runs the adaptive scheduler pytest suite on every push and PR. Tests
+# requiring the real ngsRelate-fast binary are gated by
+# NGSRELATE_FAST_BIN and skipped here (CI doesn't build the binary).
+
+on:
+  push:
+    paths:
+      - "adaptive/**"
+      - "contracts/ngsrelate_adaptive.run_manifest.v1.schema.json"
+      - ".github/workflows/adaptive-test.yml"
+  pull_request:
+    paths:
+      - "adaptive/**"
+      - "contracts/ngsrelate_adaptive.run_manifest.v1.schema.json"
+      - ".github/workflows/adaptive-test.yml"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install test deps
+        run: pip install pytest jsonschema
+      - name: Run adaptive tests
+        run: pytest adaptive/tests/ -v
