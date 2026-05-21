@@ -441,6 +441,21 @@ Suggested methods text for the fork:
 
 ---
 
+## Adaptive per-pair scheduling
+
+For per-chromosome runs feeding ngsPedigree Stage 2, the `adaptive/`
+Python package wraps the binary to budget sites *per pair* based on each
+pair's KING-class prior (derived from the genome-wide `.res`). Most
+pairs are unrelated and finish quickly at a small budget; first-degree
+and ambiguous pairs get a larger budget; borderline / interesting-
+disagreement pairs are escalated. The output `.res` is byte-compatible
+with the existing per-chrom output — `ngsPedigree` sees no change. See
+[`adaptive/README.md`](adaptive/README.md) for the quick start and
+[`adaptive/docs/IMPLEMENTATION_PLAN.md`](adaptive/docs/IMPLEMENTATION_PLAN.md)
+for the build/calibration plan.
+
+---
+
 ## License
 
 GPL-3.0, inherited from upstream `ANGSD/NgsRelate`.
